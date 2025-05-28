@@ -43,7 +43,7 @@ os.chdir(root)
 shetran_func_path = os.path.join(root,'01_codes',
                                  'SHETRAN_Post_Simulation_Functions.py')
 rains_func_path = os.path.join(root,'01_codes',
-                               'rains_010_all_functions.py')
+                               'rains_all_functions.py')
 # Load shetran_func
 spec1 = importlib.util.spec_from_file_location("shetran_func", shetran_func_path)
 sf = importlib.util.module_from_spec(spec1)
