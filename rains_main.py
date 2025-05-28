@@ -15,7 +15,7 @@ Resilient & Affordable Implementation of Natural flood management using SHETRAN
 File name: rains_main.py
 
 @author: Asid Ur Rehman, Elizabeth Lewis, Ben Smith
-Organisation: Newcastle Univeristy, Manchester University
+Organisation: Manchester University, Newcastle Univeristy
 
 About
 ------
