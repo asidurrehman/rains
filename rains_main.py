@@ -23,6 +23,14 @@ This script file contains main part of RAINS - a framework which integrates
 evolutionary multi-objective genetic algorithm (NSGA-II) with SHETRAN to find
 optimal locations and sizes of NFM features for their cost-effective design.
 
+Usage
+-----
+Set the root folder and run settings in config.yaml, then run this script
+from Spyder or from a terminal:
+
+    python rains_main.py                      # uses config.yaml next to this file
+    python rains_main.py --config my.yaml     # uses another configuration file
+
 """
 import os
 import sys
@@ -34,32 +42,38 @@ import pandas as pd
 import copy
 from scipy.stats import genextreme
 import pickle
-import importlib.util
+import argparse
+from pathlib import Path
+import yaml
 
-# Path to function files
-root = os.path.join('C:', os.path.sep,'z_nfm_opt')
+#-----------------------------------------------------------------------------#
+# Configuration: machine-specific paths and run settings live in config.yaml
+#-----------------------------------------------------------------------------#
+SCRIPT_DIR = Path(__file__).resolve().parent
+parser = argparse.ArgumentParser(
+    description="Run RAINS: NSGA-II optimisation of NFM features with SHETRAN.")
+parser.add_argument("--config", default=str(SCRIPT_DIR / "config.yaml"),
+                    help="Path to the YAML configuration file")
+args, _ = parser.parse_known_args()   # parse_known_args keeps Spyder/IPython working
+with open(args.config, "r", encoding="utf-8") as f:
+    config = yaml.safe_load(f)
+
+# Root folder holding the SHETRAN model, input data and output folders.
+# normpath gives the same path string as before (e.g. C:\z_nfm_opt on Windows)
+root = os.path.normpath(config["root"])
 os.chdir(root)
 
-shetran_func_path = os.path.join(root,'01_codes',
-                                 'SHETRAN_Post_Simulation_Functions.py')
-rains_func_path = os.path.join(root,'01_codes',
-                               'rains_all_functions.py')
-# Load shetran_func
-spec1 = importlib.util.spec_from_file_location("shetran_func", shetran_func_path)
-sf = importlib.util.module_from_spec(spec1)
-spec1.loader.exec_module(sf)
-
-# Load rains_func
-spec2 = importlib.util.spec_from_file_location("rains_func", rains_func_path)
-rf = importlib.util.module_from_spec(spec2)
-spec2.loader.exec_module(rf)
+# Load the function modules that sit next to this script
+sys.path.insert(0, str(SCRIPT_DIR))
+import SHETRAN_Post_Simulation_Functions as sf
+import rains_all_functions as rf
 
 import warnings
 warnings.simplefilter(action='ignore', category=FutureWarning)
 
-# Select which NFM features to consider
-# The line of code below can be changed. Delete layers as applicable from the list ['Extra_Pond_Capacity_RP100_10', 'WfW', 'Losses', 'ImpGrass'] below
-NFM_features_to_include = ['Extra_Pond_Capacity_RP100_10', 'WfW', 'ImpGrass']
+# Select which NFM features to consider (set in config.yaml).
+# Available layers: ['Extra_Pond_Capacity_RP100_10', 'WfW', 'Losses', 'ImpGrass']
+NFM_features_to_include = config["NFM_features_to_include"]
 
 # Read in the NFM spatial data
 gdf = gpd.read_file(os.path.join(root,'04_irwell_notebook_data',
@@ -216,7 +230,7 @@ other_paths = [org_pet_csv_path, cat_shp_path, root, exe_path]
 cat_shp = gpd.read_file(cat_shp_path)
 
 nfm_types_count = 3
-pop_size = 100
+pop_size = config["pop_size"]   # population size (set in config.yaml)
 chrom_len = cat_shp.shape[0]
 
 i_population = rf.initial_pop(pop_size, chrom_len)
