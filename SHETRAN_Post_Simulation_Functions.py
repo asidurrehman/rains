@@ -14,6 +14,18 @@
 #   sys.path.append("I:/SHETRAN_GB_2021/01_Scripts/Other/OFFLINE Generic Catchment Setup Script/")
 #   import SHETRAN_Post_Simulation_Functions as sf
 # -------------------------------------------------------------
+#
+# HOW RAINS USES THIS FILE
+# rains_main.py imports this module as "sf" and calls only two functions,
+# both inside shetran_sim() for every solution:
+#   edit_RunData_line       write the discharge-points and initial-conditions
+#                           file names into the SHETRAN rundata file
+#   run_SHETRAN_skip_pause  run shetran.exe and stop it (rather than wait) if
+#                           SHETRAN pauses or reports an error
+# The other functions are general SHETRAN helpers (calibration statistics,
+# copying results, loading and plotting flows, editing the visualisation
+# plan) that RAINS does not call.
+# -------------------------------------------------------------
 
 
 # --- Load in Packages ----------------------------------------
@@ -164,6 +176,20 @@ def folder_copy(source_folder, destination_folder, overwrite=False, outputs_only
 
 # --- Get Date Components from a data string ------------------
 def get_date_components(date_string, fmt='%Y-%m-%d'):
+    """Split a date string into year, month and day.
+
+    Parameters
+    ----------
+    date_string : str
+        Date, e.g. "1980-01-01".
+    fmt : str, optional
+        ``datetime.strptime`` format of ``date_string`` (default "%Y-%m-%d").
+
+    Returns
+    -------
+    tuple of int
+        ``(year, month, day)``.
+    """
     # "1980/01/01"
     date = datetime.datetime.strptime(date_string, fmt)
     return date.year, date.month, date.day
@@ -176,6 +202,10 @@ def get_lib_from_flow(discharge_filepath: str):
     :param discharge_filepath:  String of the file path to the SHETRAN output discharge_sim_regulartimestep.
     :return: The filepath to the model library file (assuming typical naming convention.
     """
+    # e.g. ".../output_<model>_discharge_sim_regulartimestep<ext>.txt"
+    #   -> ".../<model>_LibraryFile<ext>.xml"
+    # fname[7:] drops the leading "output_"; fname_ext[0:-4] drops ".txt".
+    # The path must use "/" separators.
     fp_split = discharge_filepath.split('/')
     fname = fp_split[-1].split('discharge_sim_regulartimestep')[0]
     fname_ext = fp_split[-1].split('discharge_sim_regulartimestep')[1]
@@ -227,6 +257,8 @@ def load_shetran_discharge(flow_path: str, simulation_start_date=None):
                   f'Using default simulation start date: {simulation_start_date}')
 
     # Get the timestep of the data from the discharge file:
+    # (the number between "timestep" and the last five characters of the
+    # file's first line, with spaces removed; used as the step in hours)
     timestep = pd.read_csv(flow_path, nrows=1, header=None)
     timestep = timestep[0][0].replace(' ', '')
     timestep = timestep.split('timestep')[-1][:-5]
@@ -407,6 +439,21 @@ def visualisation_plan_remove_item(item_number, vis_file_in=str, vis_file_out=No
 
 
 def clean_visualisation_plan(vis_plan_filepath):  # , clear_level=False
+    """Simplify a SHETRAN visualisation plan file in place.
+
+    Removes items 6, 5, 4, 3 and 1, changes ``TIMES^8`` to ``TIMES^9`` on the
+    item-7 line and switches the ``ph_depth`` output from ``grid_as_grid`` to
+    ``grid_as_list``.
+
+    Parameters
+    ----------
+    vis_plan_filepath : str
+        Path to the visualisation plan file (overwritten).
+
+    Returns
+    -------
+    None
+    """
 
     # if clear_level:
     #     for n in [6, 5, 4, 3, 2, 1]:
@@ -437,11 +484,18 @@ def edit_RunData_line(rundata_filepath, element_number, entry):
     :return: will overwrite the rundata file with the new entry.
     """
 
+    # The rundata file has numbered headings such as "47: ..."; the value for
+    # each heading is on the line below it.
+
     # Read file in read mode 'r'
     with open(rundata_filepath, 'r') as file:
         lines = file.readlines()
 
     # Run through the contents and overwrite the relevant line with the new content, else write the existing line:
+    # In practice: the heading line is written unchanged and "entry" is
+    # written straight after it WITHOUT a newline, so it is joined to the
+    # start of the following line. This gives "entry" on its own line when
+    # that following line is empty; any text already there stays after it.
     with open(rundata_filepath, 'w') as file:
         for line in lines:
             if line.startswith(str(element_number) + ":"):
@@ -463,13 +517,19 @@ def run_SHETRAN_skip_pause(exe_filepath, rundata_filepath, print_timestep=True, 
     :param force_continue: TRUE/FALSE - use according to whether you wish to skip any FORTRAN Pauses or Errors.
     :return:
     """
+    # Without force_continue: simply run SHETRAN and wait for it to finish
     if not force_continue:
         subprocess.call([exe_filepath, '-f ', rundata_filepath])
         return True
     else:
+        # With force_continue (as used by RAINS): read SHETRAN's console
+        # output line by line and react to the messages below
         successful_simulation = True
         # Run the exe, passing outputs and errors to process so that they can be monitored
         with Popen([exe_filepath, '-f ', rundata_filepath], stdout=PIPE, stderr=STDOUT, text=True) as process:  # stdin=PIPE
+            # NOTE (known issue): this loop only ends on one of the four
+            # messages checked below. If SHETRAN exits without printing any of
+            # them, readline() keeps returning "" and the loop never ends.
             while successful_simulation:
                 out = process.stdout.readline().lstrip()  # .decode('utf-8')
 
@@ -501,6 +561,8 @@ def run_SHETRAN_skip_pause(exe_filepath, rundata_filepath, print_timestep=True, 
                 if out.startswith('Normal completion'):
                     break
 
+        # True after "Normal completion", False after a pause or error
+        # (rains_main.py does not use the returned value)
         return successful_simulation
 
 

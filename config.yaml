@@ -1,0 +1,21 @@
+# RAINS configuration
+# -------------------
+# rains_main.py reads this file at start-up. Edit the values below to match
+# your machine; use forward slashes in paths (they work on Windows too).
+# Run with another file:  python rains_main.py --config path/to/other.yaml
+
+# Root (working) folder of the RAINS set-up. It must contain the SHETRAN model
+# files, the input data folders and the output folder described in README.md.
+# The script changes its working directory to this folder.
+root: C:/z_nfm_opt
+
+# NFM layers summed to estimate the total NFM storage available in each
+# Water Framework Directive catchment. Remove layers that should not be used.
+# Available layers: Extra_Pond_Capacity_RP100_10, WfW, Losses, ImpGrass
+NFM_features_to_include:
+  - Extra_Pond_Capacity_RP100_10
+  - WfW
+  - ImpGrass
+
+# Number of candidate solutions (chromosomes) in each NSGA-II generation.
+pop_size: 100
