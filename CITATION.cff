@@ -1,0 +1,28 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it using the metadata below."
+type: software
+title: "RAINS: Resilient & Affordable Implementation of Natural flood management using SHETRAN"
+abstract: >-
+  RAINS couples the SHETRAN hydrological model with the Non-dominated Sorting
+  Genetic Algorithm II (NSGA-II) to optimise the location and combined size of
+  Natural Flood Management (NFM) features: runoff attenuation features
+  (storage), woodland and improved grassland/soil.
+version: "1.0.0"
+authors:
+  - family-names: "Ur Rehman"
+    given-names: "Asid"
+  - family-names: "Lewis"
+    given-names: "Elizabeth"
+  - family-names: "Smith"
+    given-names: "Ben"
+  - family-names: "Birkinshaw"
+    given-names: "Steve"
+license: GPL-3.0-only
+repository-code: "https://github.com/asidurrehman/RAINS"
+keywords:
+  - natural flood management
+  - NFM
+  - SHETRAN
+  - NSGA-II
+  - multi-objective optimisation
+  - hydrology

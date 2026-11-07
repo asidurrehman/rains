@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# Test and lint caches
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+venv*/
+.venv*/
+env/
+
+# Editors and notebooks
+.spyproject/
+.idea/
+.vscode/
+.ipynb_checkpoints/
+
+# RAINS outputs (if the root folder in config.yaml points inside this repository)
+25_opt_outputs/
+25_output_graphs/
+
+# OS files
+.DS_Store
+Thumbs.db
