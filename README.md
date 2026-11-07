@@ -17,6 +17,7 @@ and combined sizing of various Natural Flood Management (NFM) features.
 - [Overview](#overview)
 - [How it works](#how-it-works)
 - [Repository structure](#repository-structure)
+- [Understanding the code](#understanding-the-code)
 - [Requirements](#requirements)
 - [Installation](#installation)
 - [Input data and folder layout](#input-data-and-folder-layout)
@@ -132,6 +133,31 @@ RAINS/
 ├── CHANGELOG.md
 └── LICENSE                               # GNU GPL v3.0
 ```
+
+## Understanding the code
+
+The code is commented for readers who want to understand or adapt RAINS.
+A suggested reading order:
+
+1. **`rains_main.py`, top of the file.** The `HOW THIS SCRIPT WORKS` block
+   lists the stages of a run (STEP 1 to STEP 14), and each stage has a matching
+   `STEP n` heading further down. The `NAMING CONVENTIONS` block explains what a
+   chromosome is and the variable prefixes (`i_` initial, `p_` parents, `o_`
+   offspring, `comb_` combined, `f_` fittest, `opt_` optimal, ...).
+2. **`shetran_sim()` in `rains_main.py` (STEP 8).** How one solution is turned
+   into SHETRAN input files, run, and converted into the two objectives (NFM
+   area and damages avoided).
+3. **`rains_all_functions.py`.** Starts with a `WHAT IS IN THIS FILE` overview;
+   the NSGA-II functions (sorting, crowding distance, selection, crossover,
+   mutation) are commented step by step.
+4. **`SHETRAN_Post_Simulation_Functions.py`.** Only `edit_RunData_line` and
+   `run_SHETRAN_skip_pause` are used by RAINS; the header says so.
+
+Comments starting with `USER INPUT:` mark the places to edit when adapting
+RAINS to another catchment, event or SHETRAN model (settings that are not in
+`config.yaml`). Comments starting with `NOTE (known issue):` mark known
+problems in the code that have not been changed, so that results stay
+identical to the original version.
 
 ## Requirements
 

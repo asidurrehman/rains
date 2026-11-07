@@ -9,6 +9,9 @@ All notable changes to RAINS are listed here. The format follows
 - `config.yaml` for the root folder, the NFM layers to include and the
   population size; `rains_main.py --config <file>` selects another file.
 - Docstrings for every helper function.
+- Detailed explanatory comments throughout the code: a run overview, naming
+  conventions, numbered step headings, `USER INPUT:` markers and
+  `NOTE (known issue):` markers (comments only; no code changed).
 - Automated tests (`tests/`) and a GitHub Actions workflow.
 - `requirements.txt`, `environment.yaml`, `pyproject.toml`, `CITATION.cff`,
   `.gitignore` and this changelog.

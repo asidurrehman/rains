@@ -40,6 +40,36 @@ import copy
 from scipy.stats import genextreme
 
 
+# =============================================================================
+# WHAT IS IN THIS FILE
+# =============================================================================
+# Functions called by rains_main.py (imported there as "rf"):
+#   SHETRAN output and flow statistics
+#     read_shetran, generate_growth_curve, get_growth_curves
+#   Preparing SHETRAN inputs for one solution
+#     nfm_selection (keep NFM only in selected sub-catchments of a grid),
+#     soil_update (new soil type where improved grassland/soil NFM is applied),
+#     initial_conditions_setting (read initial conditions from the vsi file)
+#   NSGA-II genetic algorithm
+#     initial_pop, non_dominated_sorting, calculate_crowding_distance,
+#     fitness_sort, fitter_parent, crossover_random_single_point_swap,
+#     mutation_random_bitflip
+#   Duplicate handling
+#     remove_duplicate_list, remove_duplicate_same_population,
+#     remove_duplicate_different_population,
+#     remove_same_objectives_population, separate_new_old
+#   Results and figures
+#     catch_contribution, scatter_plot_map_plot
+#   Not used by rains_main.py: final_exposure_cost, remove_variables
+#
+# In the NSGA-II functions a "chromosome" is a 1-D 0/1 array with one gene per
+# sub-catchment, a "population" is a 2-D array of chromosomes (one per row),
+# and solutions are referred to by their row index. Both objectives are
+# minimised (rains_main.py passes [total NFM area, -damages avoided]).
+# Arguments starting with "f_" or "in_" are simply function inputs.
+
+# Hides all warnings from here on (this changes Python's global warning
+# filter, so it also applies to rains_main.py once this module is imported)
 warnings.filterwarnings("ignore")
 
 ###############################################################################
@@ -57,16 +87,23 @@ def read_shetran(filename, start_date, end_date):
     pandas dataframe of shetran simulated flows with riverlink names as column names and a datetime index
     '''
     
+    # Column names: the first line of the file is skipped; on the second line
+    # the river link numbers start at character 39 (the text before that
+    # describes the first column, the outlet).
     with open(filename, "r") as f:
         f.readline()
         col_names = [int(i) for i in f.readline().rstrip()[39:].split()]
         col_names.insert(0, 'outlet')
     
     # Create a date range with daily frequency
+    # (one date per data row, so start_date and end_date must match the
+    # simulation exactly; otherwise set_index below fails)
     date_range = pd.date_range(start=start_date, end=end_date, freq="D")
     
     # Create an empty DataFrame with the date index
     
+    # The flows start on line 3, separated by spaces; one row per day and one
+    # column per discharge point
     df = pd.read_csv(filename, sep=r"\s+", skiprows=2, names=col_names)
     df.set_index(date_range, inplace=True)
 
@@ -92,10 +129,17 @@ def generate_growth_curve(amax, event_RP):
         Six flow values (same units as ``amax``) for the return periods
         listed above, in that order.
     """
+    # Return periods (years) at which to evaluate the curve. event_RP is the
+    # return period calculated in rains_main.py (about 3.2 for the 1983 event).
     rps = np.array([event_RP, 5, 20, 50, 100, 200]) # This is assuming that the modelled event has an RP of 3.2
+    # Note: despite the "negate" comments on the right, no values are negated;
+    # the GEV is fitted to the annual maxima as they are.
     # Fit a Generalized Extreme Value (GEV) distribution to the data
     shape, loc, scale = genextreme.fit(amax)  # Negate values for maxima fitting
+    # 1 - 1/RP is the probability that a year's maximum is BELOW the flow
+    # (non-exceedance), which is what genextreme.ppf expects
     probs = 1 - (1 / rps)  # Exceedance probability
+    # Flow with that probability = design flow for each return period
     flow_values = genextreme.ppf(probs, shape, loc, scale)  # Invert negation
 
     return(flow_values)
@@ -123,8 +167,13 @@ def get_growth_curves(filename, start_date, end_date, event_RP):
         with one column per river link ("outlet" plus the link numbers).
     """
     df = read_shetran(filename, start_date, end_date)
+    # Largest daily flow of every calendar year ("YE" = year end), per column
     annual_maxima = df.resample("YE").max().dropna()
+    # Fit a GEV to each column (river link) separately; each column becomes
+    # six design flows
     growth_curves = annual_maxima.apply(lambda col: generate_growth_curve(col, event_RP), axis=0)
+    # Label the six rows with their return periods (same order as in
+    # generate_growth_curve)
     growth_curves["RP"] = [event_RP, 5, 20, 50, 100, 200] # This is assuming that the modelled event has an RP of 3.2
     growth_curves.set_index("RP", inplace=True)
     return(growth_curves)
@@ -174,6 +223,8 @@ def nfm_selection (in_cat_ids, in_cat_shp, in_nfm, out_nfm=None, save_nfm=True):
     
     # Assign the shapefile's coordinate system to the ASCII raster
     # (simple assignment)
+    # (meta is not used by rasterize, and the CRS is set back to None before
+    # writing, so this does not affect the result)
     meta['crs'] = gdf.crs
     
     # Filter the polygons whose opt_id is in the given list
@@ -182,6 +233,8 @@ def nfm_selection (in_cat_ids, in_cat_shp, in_nfm, out_nfm=None, save_nfm=True):
     # Rasterize the selected polygons.
     # Each cell that falls within any of these polygons gets
     # a value of 1; others remain 0.
+    # (transform links row/column numbers to map coordinates, so the polygons
+    # line up with the raster cells)
     mask = rasterize(
         [(geom, 1) for geom in selected_polygons.geometry],
         out_shape=raster.shape,
@@ -249,14 +302,19 @@ def soil_update (in_org_soil, in_imp_soil, out_soil):
         max_soil = soil_data.max()
     
     # Create nodata masks for each raster
+    # (True where the soil grid has no data)
     mask_soil = ((soil_data == soil_nodata) if soil_nodata is not None
                  else np.zeros_like(soil_data, dtype=bool))
     
     # For each pixel, if grass_data is nonzero, the new value is max_soil +1.
+    # (grass_data = in_imp_soil, the improved-soil grid of the selected
+    # sub-catchments; all other cells keep their soil category)
     combined = np.where(in_imp_soil != 0, max_soil +1, soil_data)
     
+    # nodata cells stay nodata
     combined[mask_soil] = soil_nodata
     
+    # SHETRAN does not need a CRS
     soil_meta['crs'] = None
     
     # Update metadata to write as an ASCII grid (driver 'AAIGrid')
@@ -304,13 +362,17 @@ def initial_conditions_setting(root_path):
         lines = f.readlines()
     
     # Find and modify the :VS03 block
+    # (":VS03" is a heading in the vsd file; its values are on the next line.
+    # Only the first :VS03 heading is changed.)
     for i in range(len(lines)):
         if lines[i].startswith(':VS03'):
             # The next line contains the integer values
             values = lines[i + 1].split()
             # Change the last value (INITYP)
+            # (2 = read the initial conditions from the vsi file)
             values[-1] = '2'
             # Replace the line
+            # (each value preceded by six spaces)
             lines[i + 1] = '      '+'      '.join(values) + '\n'
             break
     
@@ -356,10 +418,14 @@ def initial_pop(in_pop_size, in_chrom_len):
     "all unique individuals."
     )
     
+    # population_set holds the chromosomes as tuples so that duplicates can be
+    # detected quickly; population holds the same chromosomes as arrays, in
+    # the order they were created
     population_set = set()
     population = []
     
     # Define the forced individuals
+    # (no NFM anywhere, and NFM in every sub-catchment: the two extremes)
     individual_zero = tuple([0] * in_chrom_len)
     individual_one = tuple([1] * in_chrom_len)
     
@@ -372,6 +438,7 @@ def initial_pop(in_pop_size, in_chrom_len):
     
     # Generate the rest of the population until we have enough unique individuals
     while len(population) < in_pop_size:
+        # random 0/1 genes; kept only if not already in the population
         candidate = tuple(np.random.randint(2, size=in_chrom_len))
         if candidate not in population_set:
             population_set.add(candidate)
@@ -401,14 +468,20 @@ def non_dominated_sorting(population_size,f_chroms_obj_record):
         ``{front_number: [solution indices]}``; front 0 is the
         non-dominated (Pareto-optimal) front.
     """
+    # s[p]: solutions that p dominates
+    # n[p]: number of solutions that dominate p
+    # front[i]: solutions in front i; rank[p]: front number of p
     s,n={},{}
     front,rank={},{}
     front[0]=[]     
+    # Compare every solution p with every solution q
     for p in range(population_size):
         s[p]=[]
         n[p]=0
         for q in range(population_size):
             
+            # p dominates q: p is lower (better) in both objectives, or equal
+            # in one and lower in the other
             if ((f_chroms_obj_record[p][0]<f_chroms_obj_record[q][0] and 
                  f_chroms_obj_record[p][1]<f_chroms_obj_record[q][1]) or 
                 (f_chroms_obj_record[p][0]<=f_chroms_obj_record[q][0] and 
@@ -417,6 +490,7 @@ def non_dominated_sorting(population_size,f_chroms_obj_record):
                 f_chroms_obj_record[p][1]<=f_chroms_obj_record[q][1])):
                 if q not in s[p]:
                     s[p].append(q)
+            # q dominates p (the same test the other way round)
             elif ((f_chroms_obj_record[p][0]>f_chroms_obj_record[q][0] and 
                    f_chroms_obj_record[p][1]>f_chroms_obj_record[q][1]) or 
                   (f_chroms_obj_record[p][0]>=f_chroms_obj_record[q][0] and 
@@ -424,11 +498,15 @@ def non_dominated_sorting(population_size,f_chroms_obj_record):
                   (f_chroms_obj_record[p][0]>f_chroms_obj_record[q][0] and 
                    f_chroms_obj_record[p][1]>=f_chroms_obj_record[q][1])):
                 n[p]=n[p]+1
+        # Nobody dominates p, so p is in the first (Pareto-optimal) front
         if n[p]==0:
             rank[p]=0
             if p not in front[0]:
                 front[0].append(p)
     
+    # Build the next fronts: remove the current front from the counts; the
+    # solutions whose count drops to 0 are dominated only by solutions in
+    # earlier fronts and form the next front
     i=0
     while (front[i]!=[]):
         Q=[]
@@ -442,6 +520,8 @@ def non_dominated_sorting(population_size,f_chroms_obj_record):
         i=i+1
         front[i]=Q
                 
+    # the loop always ends with an empty front; remove it (rank is not
+    # returned)
     del front[len(front)-1]
     return front
 
@@ -469,12 +549,16 @@ def calculate_crowding_distance(f_front,f_chroms_obj_record):
     dict
         ``{front_number: {solution_index: crowding_distance}}``.
     """
+    # distance[front number] = {solution index: crowding distance}
     distance = {}
     for i in range(len(f_front)):
         distance[i] = dict.fromkeys(f_front[i], 0)
         del i
     
+    # Work front by front (o = front number)
     for o in range(len(f_front)):
+            # dt / de: first and second objective of each solution in the
+            # front; dt_dis / de_dis: the distance from each objective
             dt = dict.fromkeys(f_front[o], 0)
             dt_dis = dict.fromkeys(f_front[o], 0)
             de = dict.fromkeys(f_front[o], 0)
@@ -483,6 +567,7 @@ def calculate_crowding_distance(f_front,f_chroms_obj_record):
                 dt[k] = f_chroms_obj_record[k][0]
                 de[k] = f_chroms_obj_record[k][1]
             del k
+            # the solutions of the front sorted by each objective (ascending)
             dt_sort = {k: v for k, v in sorted(dt.items(), key=lambda 
                                                item: item[1])}
             de_sort = {k: v for k, v in sorted(de.items(), key=lambda 
@@ -492,6 +577,11 @@ def calculate_crowding_distance(f_front,f_chroms_obj_record):
             ## way so we could calculate distance for element having same 
             ## key in dt_sort and de_sort    
             ## list(dictionary.values()) returns list of dictionary values
+            # First objective: a solution in the middle gets the gap between
+            # its two neighbours divided by the objective's range in this
+            # front (normalised). The two end solutions get a very large
+            # value, so they are ranked first within their front and the
+            # extremes of the front are favoured.
             key_lst = list(dt_sort.keys())    
             for i,key in enumerate(key_lst):
                 if i!=0 and i!= len(dt_sort)-1:
@@ -502,6 +592,8 @@ def calculate_crowding_distance(f_front,f_chroms_obj_record):
                 else:
                     dt_dis[key] = 666666666
             del i,key, key_lst
+            # Second objective: the same, with a different large value for
+            # the ends
             key_lst = list(de_sort.keys())  
             for i,key in enumerate(key_lst):
                 if i!=0 and i!= len(de_sort)-1:
@@ -512,6 +604,8 @@ def calculate_crowding_distance(f_front,f_chroms_obj_record):
                 else:
                     de_dis[key] = 333333333    
             
+            # Crowding distance = sum of both contributions. A larger value
+            # means the solution lies in a less crowded part of the front.
             t_dis = {}
             
             for i in key_lst:
@@ -542,12 +636,15 @@ def fitness_sort(f_distance, f_pop_size):
     list of int
         Solution indices, fittest first.
     """
+    # Within each front, sort the solutions by crowding distance, largest
+    # first
     f_distance_sort = {}
     for i in range(len(f_distance)):
         f_distance_sort[i] = {k: v for k, v in sorted(f_distance[i].items(), 
                                                      key=lambda 
                                                      item: item[1], 
                                                      reverse = True)}
+    # List the solutions front by front (front 0 first) in that order
     parents_offspring = [None]*f_pop_size
     a = 0
     for i in range(len(f_distance_sort)):
@@ -578,11 +675,14 @@ def fitter_parent(f_sorted_fitness,f_pop_size):
     int
         Index of the selected parent.
     """
+    # Two different random solutions (row indices 0 .. f_pop_size-1)
     pairs_rand = np.random.randint(f_pop_size, size = (1, 2))
     
     while pairs_rand[0,0] == pairs_rand[0,1]:
         pairs_rand = np.random.randint(f_pop_size, size = (1, 2))
     
+    # Compare their positions in the fitness ranking: the one nearer the
+    # front of f_sorted_fitness is fitter and wins the tournament
     if (np.where(f_sorted_fitness == pairs_rand[0,0]) < 
           np.where(f_sorted_fitness == pairs_rand[0,1])):
         return pairs_rand[0,0]
@@ -616,11 +716,14 @@ def crossover_random_single_point_swap(f_pop, p1, p2, f_min_idx, f_max_idx):
     """
     ## creating childrens
     ## random crossover index position for first child
+    # child 1 = parent 1 genes [0, cut) + parent 2 genes [cut, end)
     c_index = np.random.randint(f_min_idx,f_max_idx)
     f_child_1 = np.concatenate((f_pop[p1][0:c_index], 
                         f_pop[p2][c_index:len(f_pop[p1])]), axis=0)
     
     ## random crossover index position for second child
+    # child 2 = parent 2 genes [0, cut) + parent 1 genes [cut, end), with its
+    # own random cut point
     c_index = np.random.randint(f_min_idx,f_max_idx)
     f_child_2 = np.concatenate((f_pop[p2][0:c_index], 
                         f_pop[p1][c_index:len(f_pop[p1])]), axis=0)
@@ -630,6 +733,7 @@ def crossover_random_single_point_swap(f_pop, p1, p2, f_min_idx, f_max_idx):
     #     f_child_2 = np.concatenate((f_pop[p2][0:c_index], 
     #                         f_pop[p1][c_index:len(f_pop[p1])]), axis=0)
 
+    # (transposing a 1-D array leaves it unchanged)
     return f_child_1.transpose(), f_child_2.transpose() 
 
 #-----------------------------------------------------------------------------#
@@ -660,7 +764,9 @@ def mutation_random_bitflip(f_child_1, f_child_2, f_chrom_len, prob,
     tuple of numpy.ndarray
         The mutated children.
     """
+    # The children are changed in place (the arrays passed in are modified)
     ## Mutation of 1st child
+    # with probability prob, flip one randomly chosen gene
     if prob > np.random.rand():
         m_index = np.random.randint(f_m_idx_range)
         if f_child_1[m_index] == 0:
@@ -677,6 +783,7 @@ def mutation_random_bitflip(f_child_1, f_child_2, f_chrom_len, prob,
             f_child_2[m_index] = 0
     
     ## Check if both children are the same
+    # keep flipping random genes of child 2 until the two children differ
     while np.all(f_child_1 == f_child_2) == True:
         m_index = np.random.randint(f_m_idx_range)
         if f_child_2[m_index] == 0:
@@ -707,6 +814,8 @@ def remove_duplicate_list(record_list):
     """
     # print('\n' 'Checking duplicates in the list:')
     m_pool = copy.deepcopy(record_list)
+    # Compare every row i with every later row j; a later row equal to an
+    # earlier one is marked for removal (dict keys avoid marking a row twice)
     idx = {}
     for i in range(0,len(m_pool)):
         for j in range(i+1,len(m_pool)):
@@ -714,8 +823,11 @@ def remove_duplicate_list(record_list):
                 # print('Record no. {0} was equal to record no. {1}'
                 #       .format(i,j))
                 idx[j] = j 
+    # NOTE (known issue): with fewer than two rows, j (or i) is never
+    # assigned and this "del" fails. rains_main.py always passes more rows.
     del i, j
     
+    # remove the marked rows (the first copy of each record is kept)
     if idx!={}:
         m_pool = np.delete(m_pool, list(idx.values()),0)
 
@@ -742,6 +854,8 @@ def remove_duplicate_same_population(same_population):
     """
     # print('\nChecking duplicate chroms in the same population:')
     pop_uniq = copy.deepcopy(same_population)
+    # Compare every chromosome with every later one; later copies are marked
+    # for removal (a: {row index: row index})
     a = {}
     for i in range(0, len(pop_uniq)):
         for j in range(i+1,len(pop_uniq)):
@@ -774,6 +888,10 @@ def remove_duplicate_different_population(population1, population2):
     """
     # print('\n' 'Checking duplicate chroms in different populations:')
     pop_1 = copy.deepcopy(population1)
+    # Mark every chromosome of population1 that also occurs anywhere in
+    # population2 (a: {row index in population1: row index}), then delete
+    # the marked rows. In rains_main.py this removes offspring that have
+    # already been simulated.
     a = {}
     for i in range(0,len(population2)):
         for j in range(0,len(population1)):
@@ -813,6 +931,7 @@ def final_exposure_cost(f_comb_total_c, f_comb_cat_high,
     tuple of list
         ``(costs, exposures)`` of the selected solutions, in selection order.
     """
+    # (not used by rains_main.py)
     total_c_f = [None]*population_size
     cat_high_f = [None]*population_size
     k = 0
@@ -851,6 +970,10 @@ def catch_contribution(f_shape_catch, f_join_column, f_chrom_len,
         the percentage column (``'per_count'``).
     """
     # calculating total contribution of each zone (chromosome)
+    # ("zone" = sub-catchment = gene). One row per sub-catchment: its number,
+    # how many chromosomes have a 1 for it, and that count as a percentage of
+    # the population. The array is integer, so the percentage is cut to a
+    # whole number.
     chrom_contribution = np.zeros((f_chrom_len, 3), dtype=int)
     for i in range(f_chrom_len):
         chrom_contribution[i,0] = i   # zone id
@@ -868,6 +991,8 @@ def catch_contribution(f_shape_catch, f_join_column, f_chrom_len,
     # shape_zone_id = np.array(f_shape_zones['cluster_id'])
     
     # joining fields from dataframe to shapefile (gpd)
+    # (left join on the polygons: every polygon is kept; polygons whose ID
+    # does not match a gene get empty values)
     joined_shape_catch = pd.merge(
         left=f_shape_catch,
         right=df,
@@ -931,6 +1056,7 @@ def scatter_plot_map_plot(f_fig_background, f_plot_title, f_cost, f_exposure,
     
     plt.style.use(f_fig_background)
     
+    # One figure, two panels side by side: ax[0] scatter plot, ax[1] map
     fig, ax = plt.subplots(1, 2, figsize =(18, 8), dpi = 300,
                            gridspec_kw={'width_ratios': [1, 1]})
     ax = ax.flatten()
@@ -939,6 +1065,7 @@ def scatter_plot_map_plot(f_fig_background, f_plot_title, f_cost, f_exposure,
     '''----------------------------------------------------------------------
     This part creates scatter plot
     ----------------------------------------------------------------------'''    
+    # (both branches currently use the same edge colour)
     if f_fig_background == 'dark_background':
         edgecolors_evolving = '#2E75B6'
         
@@ -984,15 +1111,20 @@ def scatter_plot_map_plot(f_fig_background, f_plot_title, f_cost, f_exposure,
     This part creates map plot
     ----------------------------------------------------------------------'''
  
+    # Narrow axis to the right of the map for the colour bar
     divider = make_axes_locatable(ax[1])
     cax = divider.append_axes("right", size="2%", pad=0.1)
     cax.tick_params(labelsize='12')
     
+    # Work on a copy; 0 % contribution is turned into "missing" so those
+    # sub-catchments are drawn white (missing_kwds) instead of coloured
     f_shape_zones_joined = copy.deepcopy(f_shape_zones_joined)
     f_shape_zones_joined[f_shape_zones_contribution_column] = (
     f_shape_zones_joined[f_shape_zones_contribution_column].replace(
                                                             {0:np.nan}))
     
+    # Colour each sub-catchment by its contribution (0-100 %, colour map
+    # split into 10 classes)
     f_shape_zones_joined.plot(column= f_shape_zones_contribution_column,
                 cmap=plt.get_cmap(f_map_colour,10), 
                 ax=ax[1],
@@ -1009,6 +1141,10 @@ def scatter_plot_map_plot(f_fig_background, f_plot_title, f_cost, f_exposure,
                 #               "hatch": "///"})
         
                 
+    # If any sub-catchment has no contribution, add a small legend entry: the
+    # text is placed relative to the panel, the white box at fixed map
+    # coordinates (easting 373300 m, northing 409660 m).
+    # USER INPUT: move the box for a map of another area.
     if f_shape_zones_joined[f_shape_zones_contribution_column].isna().sum()!=0:
         ax[1].text(0.1, 0.03, 'No contribution ',
                     horizontalalignment='left', verticalalignment='bottom',
@@ -1039,6 +1175,8 @@ def scatter_plot_map_plot(f_fig_background, f_plot_title, f_cost, f_exposure,
         
     # plt.show()            
     # Save figure to desktop
+    # (saved to f_save_file at the figure's 300 dpi; the figure is then
+    # closed to free memory)
     plt.savefig(f_save_file, dpi='figure', transparent = False, 
                 bbox_inches = 'tight', pad_inches = 0.25)
     plt.close()
@@ -1074,6 +1212,7 @@ def separate_new_old(f_new_population, f_old_population):
     ## ^ for new and old we used f_new_population. For new_chroms, we
     ## will delete old chroms from new population. For old_chroms, we
     ## will select old chroms from new population
+    # a: rows of the new population that also occur in the old population
     a = {}
     for i in range(0,len(f_old_population)):
         for j in range(0,len(f_new_population)):
@@ -1082,10 +1221,14 @@ def separate_new_old(f_new_population, f_old_population):
                 #       'equal to chromosome no. {0} in old population'
                 #       .format(j))
                 a[j] = j
+    # new = rows not found in the old population; old = rows found there
     if a!={}:
         f_new_chroms = np.delete(f_new_chroms, list(a.values()),0)
         f_old_chroms = f_old_chroms[list(a.values())]
         f_old_chroms_index = list(a.values())
+    # NOTE (known issue): if no chromosome is shared (a is empty),
+    # f_old_chroms_index is never assigned and this line raises
+    # UnboundLocalError.
     return f_new_chroms, f_old_chroms, f_old_chroms_index
 
 #-----------------------------------------------------------------------------#
@@ -1108,6 +1251,7 @@ def remove_variables(f_dir, f_variables_list):
     -------
     None
     """
+    # (not used by rains_main.py)
     for var in f_variables_list:
         for obj in f_dir:
             if var == obj:
@@ -1138,6 +1282,8 @@ def remove_same_objectives_population(f_comb_population, f_dup_idx_obj):
     comb_pop = copy.deepcopy(f_comb_population)
     a = copy.deepcopy(f_dup_idx_obj)
 
+    # delete those rows, so the chromosomes stay aligned with the
+    # de-duplicated objective records
     if a!=[]:
         comb_pop = np.delete(comb_pop, a, 0)
         # print('....\n {0} duplicate chroms from poulation 1 deleted'
