@@ -1,0 +1,21 @@
+# Conda environment for RAINS (works on Windows, macOS and Linux).
+# Create:   conda env create -f environment.yaml
+# Activate: conda activate rains
+name: rains
+channels:
+  - conda-forge
+dependencies:
+  - python=3.10
+  - numpy>=1.23
+  - pandas>=2.2,<3
+  - geopandas>=1.0
+  - rasterio>=1.3
+  - scipy>=1.9
+  - matplotlib>=3.6
+  - openpyxl>=3.0
+  - plotly>=5.0
+  - pyyaml>=6.0
+  - pytest
+  - pip
+  - pip:
+      - hydroeval>=0.1
