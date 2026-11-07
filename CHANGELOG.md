@@ -12,7 +12,6 @@ All notable changes to RAINS are listed here. The format follows
 - Automated tests (`tests/`) and a GitHub Actions workflow.
 - `requirements.txt`, `environment.yaml`, `pyproject.toml`, `CITATION.cff`,
   `.gitignore` and this changelog.
-- Version number in `version.py`.
 
 ### Changed
 - `rains_main.py` imports `rains_all_functions.py` and
@@ -22,9 +21,9 @@ All notable changes to RAINS are listed here. The format follows
   output details.
 
 The optimisation itself is unchanged: with the default `config.yaml`, results
-are identical to version 1.0.0.
+are identical to version 0.1.0.
 
-## [1.0.0] - 2025-05-28
+## [0.1.0] - 2025-05-28
 
 - First public release of `rains_main.py`, `rains_all_functions.py` and
   `SHETRAN_Post_Simulation_Functions.py`.

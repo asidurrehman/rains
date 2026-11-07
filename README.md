@@ -294,7 +294,7 @@ button (from [`CITATION.cff`](CITATION.cff)) provides APA and BibTeX formats.
 
 > Ur Rehman, A., Lewis, E., Smith, B., & Birkinshaw, S. (2025). *RAINS:
 > Resilient & Affordable Implementation of Natural flood management using
-> SHETRAN* (Version 1.0.0) [Computer software].
+> SHETRAN* (Version 0.1.0) [Computer software].
 > https://github.com/asidurrehman/RAINS
 
 ```bibtex
@@ -302,7 +302,7 @@ button (from [`CITATION.cff`](CITATION.cff)) provides APA and BibTeX formats.
   author  = {Ur Rehman, Asid and Lewis, Elizabeth and Smith, Ben and Birkinshaw, Steve},
   title   = {{RAINS}: Resilient \& Affordable Implementation of Natural flood management using {SHETRAN}},
   year    = {2025},
-  version = {1.0.0},
+  version = {0.1.0},
   url     = {https://github.com/asidurrehman/RAINS}
 }
 ```

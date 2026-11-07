@@ -7,7 +7,7 @@ abstract: >-
   Genetic Algorithm II (NSGA-II) to optimise the location and combined size of
   Natural Flood Management (NFM) features: runoff attenuation features
   (storage), woodland and improved grassland/soil.
-version: "1.0.0"
+version: "0.1.0"
 authors:
   - family-names: "Ur Rehman"
     given-names: "Asid"
