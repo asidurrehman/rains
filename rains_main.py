@@ -245,6 +245,56 @@ def shetran_sim (in_gen_num, in_population, in_nfm_types_count,
                   in_cat_shp_path, in_exe_path, in_root, in_she_output_path,
                   in_baseline_growth_curves, in_max_NFM_growth_curves,
                   in_baseline_event, in_max_NFM_event):
+    """Simulate every chromosome with SHETRAN and evaluate both objectives.
+
+    For each chromosome the maximum-NFM rasters (storage/RAFs and woodland)
+    are set to zero in sub-catchments without NFM, the soil map is updated
+    for improved grassland/soil, SHETRAN is prepared and run, and the
+    damages avoided are estimated from the simulated event flows (see
+    README.md). Uses the module-level tables ``vols_df``, ``CaR_names``,
+    ``CaR_ID_df``, ``max_vol_df``, ``damages_df`` and ``root``.
+
+    Parameters
+    ----------
+    in_gen_num : int
+        Generation number (used for printing). The value 999 also saves the
+        SHETRAN discharge file of every chromosome to
+        ``25_opt_outputs/opt_flows`` as ``Chromosome_XXX.txt``.
+    in_population : numpy.ndarray
+        Chromosomes to simulate, shape (n, chrom_len).
+    in_nfm_types_count : int
+        Number of NFM types (3: RAFs, woodland, improved soil).
+    in_org_pet_csv_path, in_she_pet_csv_path : str
+        Original PET file and the copy placed in the SHETRAN folder.
+    in_storage_asc_path, in_she_storage_asc_path : str
+        Maximum NFM storage grid and the grid written for SHETRAN.
+    in_woodland_asc_path, in_she_woodland_asc_path : str
+        Maximum NFM woodland grid and the grid written for SHETRAN.
+    in_imp_soil_asc_path : str
+        Maximum improved-soil NFM grid.
+    in_org_soil_asc_path, in_she_soil_asc_path : str
+        Original soil grid and the soil grid written for SHETRAN.
+    in_cat_shp_path : str
+        Sub-catchment shapefile (fields ``opt_id``, ``raf``, ``woodland``,
+        ``imp_soil``).
+    in_exe_path : str
+        Folder with ``shetran-prepare-snow-NFM.exe`` and ``shetran.exe``.
+    in_root : str
+        SHETRAN model folder (the RAINS root folder).
+    in_she_output_path : str
+        SHETRAN multi-point discharge output file.
+    in_baseline_growth_curves, in_max_NFM_growth_curves : pandas.DataFrame
+        Growth curves of the baseline and maximum-NFM long simulations.
+    in_baseline_event, in_max_NFM_event : pandas.DataFrame
+        Event-day flows of the baseline and maximum-NFM event simulations.
+
+    Returns
+    -------
+    tuple of numpy.ndarray
+        ``(nfm_area, damages_avoided_M)``: NFM area in km2, shape (n, 4),
+        with columns RAFs, woodland, improved soil and total; and damages
+        avoided in GBP million, shape (n, 1).
+    """
     
     # To save NFM areas individually and total
     nfm_area = np.zeros([in_population.shape[0], in_nfm_types_count+1])

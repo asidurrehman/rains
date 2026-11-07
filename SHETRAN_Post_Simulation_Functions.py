@@ -164,6 +164,20 @@ def folder_copy(source_folder, destination_folder, overwrite=False, outputs_only
 
 # --- Get Date Components from a data string ------------------
 def get_date_components(date_string, fmt='%Y-%m-%d'):
+    """Split a date string into year, month and day.
+
+    Parameters
+    ----------
+    date_string : str
+        Date, e.g. "1980-01-01".
+    fmt : str, optional
+        ``datetime.strptime`` format of ``date_string`` (default "%Y-%m-%d").
+
+    Returns
+    -------
+    tuple of int
+        ``(year, month, day)``.
+    """
     # "1980/01/01"
     date = datetime.datetime.strptime(date_string, fmt)
     return date.year, date.month, date.day
@@ -407,6 +421,21 @@ def visualisation_plan_remove_item(item_number, vis_file_in=str, vis_file_out=No
 
 
 def clean_visualisation_plan(vis_plan_filepath):  # , clear_level=False
+    """Simplify a SHETRAN visualisation plan file in place.
+
+    Removes items 6, 5, 4, 3 and 1, changes ``TIMES^8`` to ``TIMES^9`` on the
+    item-7 line and switches the ``ph_depth`` output from ``grid_as_grid`` to
+    ``grid_as_list``.
+
+    Parameters
+    ----------
+    vis_plan_filepath : str
+        Path to the visualisation plan file (overwritten).
+
+    Returns
+    -------
+    None
+    """
 
     # if clear_level:
     #     for n in [6, 5, 4, 3, 2, 1]:
